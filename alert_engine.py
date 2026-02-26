@@ -1,9 +1,7 @@
 import smtplib
-import requests
 import logging
 import csv
 import os
-from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -17,21 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 def _build_alert_message(result):
-    """Build a clear, informative alert message from prediction result."""
-    r         = result
+    """Build alert message string — Python 3.10 compatible."""
     separator = '=' * 40
-    level     = r['risk']['level']
-    location  = r['location']
-    timestamp = r['timestamp']
-    prob      = r['probability'] * 100
-    status    = r['risk']['status']
-    temp      = r['weather']['Temperature']
-    rh        = r['weather']['RH']
-    ws        = r['weather']['Ws']
-    fwi_val   = r['fwi']['FWI']
-    maps      = r['maps_url']
-    lat       = r['lat']
-    lon       = r['lon']
+    level     = result['risk']['level']
+    location  = result['location']
+    timestamp = result['timestamp']
+    prob      = result['probability'] * 100
+    status    = result['risk']['status']
+    temp      = result['weather']['Temperature']
+    rh        = result['weather']['RH']
+    ws        = result['weather']['Ws']
+    fwi_val   = result['fwi']['FWI']
+    maps      = result['maps_url']
+    lat       = result['lat']
+    lon       = result['lon']
 
     return (
         'WILDFIRE ALERT - ' + level + ' RISK\n' +
@@ -50,10 +47,87 @@ def _build_alert_message(result):
     )
 
 
+def log_prediction(result, channels_sent=None):
+    """
+    ★ CORE FUNCTION ★
+    Saves EVERY prediction to CSV automatically —
+    LOW, MEDIUM, HIGH, CRITICAL — all of them, always.
+    Called after every single prediction run.
+    """
+    if channels_sent is None:
+        channels_sent = []
+
+    # Create logs folder if it doesn't exist
+    os.makedirs('logs', exist_ok=True)
+
+    # Check if file exists AND has content
+    file_exists = (
+        os.path.exists(ALERT_LOG_PATH) and
+        os.path.getsize(ALERT_LOG_PATH) > 0
+    )
+
+    with open(ALERT_LOG_PATH, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+
+        # Write header row only once (first time)
+        if not file_exists:
+            writer.writerow([
+                'timestamp',
+                'location',
+                'lat',
+                'lon',
+                'temperature_c',
+                'humidity_pct',
+                'wind_kmh',
+                'rain_mm',
+                'ffmc',
+                'dmc',
+                'dc',
+                'isi',
+                'bui',
+                'fwi',
+                'fire_probability_pct',
+                'prediction',
+                'risk_level',
+                'alert_sent',
+                'channels'
+            ])
+
+        # Write data row for EVERY prediction
+        writer.writerow([
+            result['timestamp'],
+            result['location'],
+            result['lat'],
+            result['lon'],
+            result['weather']['Temperature'],
+            result['weather']['RH'],
+            result['weather']['Ws'],
+            result['weather']['Rain'],
+            result['fwi']['FFMC'],
+            result['fwi']['DMC'],
+            result['fwi']['DC'],
+            result['fwi']['ISI'],
+            result['fwi']['BUI'],
+            result['fwi']['FWI'],
+            round(result['probability'] * 100, 2),
+            'FIRE' if result['prediction'] == 1 else 'NO FIRE',
+            result['risk']['level'],
+            'YES' if channels_sent else 'NO',
+            '|'.join(channels_sent) if channels_sent else 'none'
+        ])
+
+    logger.info(
+        'Saved to CSV --> ' +
+        result['location'] + ' | ' +
+        result['risk']['level'] + ' | ' +
+        str(round(result['probability'] * 100, 1)) + '%'
+    )
+
+
 def send_sms(result):
-    """Send SMS to all emergency contacts via Twilio."""
+    """Send SMS via Twilio — only for HIGH / CRITICAL."""
     if not TWILIO_SID or not TWILIO_TOKEN:
-        logger.warning('Twilio not configured in .env — skipping SMS.')
+        logger.warning('Twilio not configured — skipping SMS.')
         return {}
 
     try:
@@ -81,21 +155,21 @@ def send_sms(result):
                     to=number
                 )
                 statuses[name] = 'sent'
-                logger.info('SMS sent to ' + name + ' (' + number + ')')
+                logger.info('SMS sent to ' + name)
             except Exception as e:
-                statuses[name] = 'failed: ' + str(e)
+                statuses[name] = 'failed'
                 logger.error('SMS to ' + name + ' failed: ' + str(e))
         return statuses
 
     except ImportError:
-        logger.warning('Twilio package not installed — skipping SMS.')
+        logger.warning('Twilio not installed — skipping SMS.')
         return {}
 
 
 def send_email(result):
-    """Send email alert via Gmail SMTP."""
+    """Send email alert via Gmail — only for HIGH / CRITICAL."""
     if not GMAIL_ADDRESS or not GMAIL_PASSWORD:
-        logger.warning('Gmail not configured in .env — skipping email.')
+        logger.warning('Gmail not configured — skipping email.')
         return False
 
     level    = result['risk']['level']
@@ -113,60 +187,47 @@ def send_email(result):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15) as smtp:
             smtp.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
             smtp.sendmail(GMAIL_ADDRESS, ALERT_RECEIVERS, msg.as_string())
-        logger.info('Email sent to ' + str(ALERT_RECEIVERS))
+        logger.info('Email alert sent!')
         return True
     except Exception as e:
         logger.error('Email failed: ' + str(e))
         return False
 
 
-def log_alert(result, channels_sent):
-    """Append alert record to CSV log file."""
-    os.makedirs('logs', exist_ok=True)
-    file_exists = os.path.exists(ALERT_LOG_PATH)
-
-    with open(ALERT_LOG_PATH, 'a', newline='') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow([
-                'timestamp', 'location', 'lat', 'lon',
-                'probability', 'risk_level', 'channels'
-            ])
-        writer.writerow([
-            result['timestamp'],
-            result['location'],
-            result['lat'],
-            result['lon'],
-            result['probability'],
-            result['risk']['level'],
-            '|'.join(channels_sent)
-        ])
-
-
 def dispatch_alerts(result):
-    """Master alert dispatcher — sends all configured alerts."""
-    if not result['risk']['should_alert']:
-        logger.info(
-            result['location'] + ': ' +
-            result['risk']['level'] + ' — no alert needed.'
-        )
-        return
+    """
+    Master dispatcher — called after EVERY prediction.
 
-    logger.warning(
-        'ALERT: ' + result['location'] +
-        ' is ' + result['risk']['level'] + '!'
-    )
+    Flow:
+    ┌─────────────────────────────────────────────┐
+    │  Every prediction (ALL risk levels)          │
+    │       │                                      │
+    │       ├──► log_prediction() ──► CSV saved   │
+    │       │                                      │
+    │       └──► IF HIGH or CRITICAL:              │
+    │               ├──► send_email()              │
+    │               └──► send_sms()                │
+    └─────────────────────────────────────────────┘
+    """
     sent = []
 
-    # Email alert
-    if send_email(result):
-        sent.append('email')
+    # ── Send alerts only for HIGH / CRITICAL ──────────────────────────────
+    if result['risk']['should_alert']:
+        logger.warning(
+            'EMERGENCY: ' + result['location'] +
+            ' risk level is ' + result['risk']['level']
+        )
+        if send_email(result):
+            sent.append('email')
 
-    # SMS alert
-    sms_status = send_sms(result)
-    if any(v == 'sent' for v in sms_status.values()):
-        sent.append('sms')
+        sms_status = send_sms(result)
+        if any(v == 'sent' for v in sms_status.values()):
+            sent.append('sms')
+    else:
+        logger.info(
+            result['location'] + ' | ' +
+            result['risk']['level'] + ' | Monitoring only.'
+        )
 
-    # Log it
-    log_alert(result, sent)
-    logger.info('Alerts sent via: ' + str(sent))
+    # ── ALWAYS save to CSV regardless of risk level ───────────────────────
+    log_prediction(result, sent)
