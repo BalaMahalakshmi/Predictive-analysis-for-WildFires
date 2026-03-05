@@ -1,16 +1,11 @@
 import folium
 import os
-import time
 import pandas as pd
 from config import LOCATIONS, ALERT_LOG_PATH
 
-# Tamil Nadu center — default view
 TN_LAT  = 11.1271
 TN_LON  = 78.6569
-TN_ZOOM = 7   # shows all of Tamil Nadu nicely
-
-INDIA_LAT  = 20.5937
-INDIA_LON  = 78.9629
+TN_ZOOM = 7
 
 RISK_COLOR = {
     "CRITICAL": "#DC2626",
@@ -42,22 +37,12 @@ ZOOM_LEVEL = {
 }
 
 
-def _make_map(lat, lon, zoom):
-    """Create a folium map centered at given location."""
-    return folium.Map(
-        location   = [lat, lon],
-        zoom_start = zoom,
-        tiles      = "OpenStreetMap",
-    )
-
-
 def _popup_html(result):
     risk  = result["risk"]["level"]
     color = RISK_COLOR.get(risk, "#3B82F6")
     prob  = round(result["probability"] * 100, 1)
     w     = result["weather"]
     f     = result["fwi"]
-    maps  = result["maps_url"]
     return (
         '<div style="font-family:Segoe UI,sans-serif;background:#0F172A;color:#F1F5F9;'
         'border-radius:10px;padding:14px;min-width:260px;border:2px solid ' + color + ';">'
@@ -69,23 +54,19 @@ def _popup_html(result):
         '<span style="color:#94A3B8;font-size:12px;margin-left:8px;">' + str(prob) + '% fire probability</span>'
         '</div>'
         '<table style="width:100%;font-size:12px;">'
-        '<tr><td style="color:#94A3B8;padding:3px;">Temp</td>'
-        '<td style="font-weight:bold;padding:3px;">' + str(w["Temperature"]) + ' C</td>'
-        '<td style="color:#94A3B8;padding:3px;">Humidity</td>'
-        '<td style="font-weight:bold;padding:3px;">' + str(w["RH"]) + '%</td></tr>'
-        '<tr><td style="color:#94A3B8;padding:3px;">Wind</td>'
-        '<td style="font-weight:bold;padding:3px;">' + str(w["Ws"]) + ' km/h</td>'
-        '<td style="color:#94A3B8;padding:3px;">Rain</td>'
-        '<td style="font-weight:bold;padding:3px;">' + str(w["Rain"]) + ' mm</td></tr>'
-        '<tr><td style="color:#94A3B8;padding:3px;">FWI</td>'
-        '<td style="font-weight:bold;color:' + color + ';padding:3px;">' + str(f["FWI"]) + '</td>'
-        '<td style="color:#94A3B8;padding:3px;">Time</td>'
-        '<td style="color:#64748B;font-size:10px;padding:3px;">' + str(result["timestamp"]) + '</td></tr>'
+        '<tr><td style="color:#94A3B8;">Temp</td><td style="font-weight:bold;">' + str(w["Temperature"]) + ' C</td>'
+        '<td style="color:#94A3B8;">Humidity</td><td style="font-weight:bold;">' + str(w["RH"]) + '%</td></tr>'
+        '<tr><td style="color:#94A3B8;">Wind</td><td style="font-weight:bold;">' + str(w["Ws"]) + ' km/h</td>'
+        '<td style="color:#94A3B8;">Rain</td><td style="font-weight:bold;">' + str(w["Rain"]) + ' mm</td></tr>'
+        '<tr><td style="color:#94A3B8;">FWI</td><td style="font-weight:bold;color:' + color + ';">' + str(f["FWI"]) + '</td>'
+        '<td style="color:#94A3B8;">GPS</td><td style="color:#64748B;font-size:10px;">'
+        + str(result["lat"]) + ',' + str(result["lon"]) + '</td></tr>'
         '</table>'
         '<div style="margin-top:10px;">'
-        '<a href="' + maps + '" target="_blank" style="color:' + color + ';font-size:11px;'
-        'text-decoration:none;border:1px solid ' + color + '44;padding:3px 8px;border-radius:5px;">'
-        'Open in Google Maps</a></div></div>'
+        '<a href="https://maps.google.com/?q=' + str(result["lat"]) + ',' + str(result["lon"])
+        + '" target="_blank" style="color:' + color + ';font-size:11px;text-decoration:none;'
+        'border:1px solid ' + color + '44;padding:3px 8px;border-radius:5px;">Open Google Maps</a>'
+        '</div></div>'
     )
 
 
@@ -113,119 +94,129 @@ def _add_pin(m, result):
     return m
 
 
-def _add_legend(m):
-    html = (
-        '<div style="position:fixed;bottom:36px;right:16px;'
-        'background:rgba(15,23,42,0.93);border:1px solid #334155;'
+def _legend_html():
+    return (
+        '<div style="position:fixed;bottom:30px;right:10px;'
+        'background:rgba(15,23,42,0.95);border:1px solid #334155;'
         'border-radius:10px;padding:12px 16px;z-index:9999;'
         'font-family:Segoe UI,sans-serif;font-size:12px;color:#F1F5F9;">'
-        '<div style="font-weight:bold;color:#94A3B8;letter-spacing:2px;font-size:10px;margin-bottom:8px;">RISK LEVELS</div>'
-        '<div style="margin:4px 0;"><span style="color:#DC2626;font-size:14px;">&#9679;</span>&nbsp; CRITICAL — Alert Sent</div>'
-        '<div style="margin:4px 0;"><span style="color:#EA580C;font-size:14px;">&#9679;</span>&nbsp; HIGH — Alert Sent</div>'
-        '<div style="margin:4px 0;"><span style="color:#D97706;font-size:14px;">&#9679;</span>&nbsp; MEDIUM — Monitoring</div>'
-        '<div style="margin:4px 0;"><span style="color:#16A34A;font-size:14px;">&#9679;</span>&nbsp; LOW — Safe</div>'
+        '<b style="color:#94A3B8;font-size:10px;letter-spacing:2px;">RISK LEVELS</b><br><br>'
+        '<span style="color:#DC2626;">&#9679;</span> CRITICAL — Alert Sent<br>'
+        '<span style="color:#EA580C;">&#9679;</span> HIGH — Alert Sent<br>'
+        '<span style="color:#D97706;">&#9679;</span> MEDIUM — Monitoring<br>'
+        '<span style="color:#16A34A;">&#9679;</span> LOW — Safe'
         '</div>'
     )
-    m.get_root().html.add_child(folium.Element(html))
-    return m
 
 
-def _inject_zoom(html, lat, lon, zoom):
-    """Inject JS to force map zoom — bypasses all Streamlit caching."""
-    js = (
-        '<script>'
-        'window.addEventListener("load", function() {'
-        '  setTimeout(function() {'
-        '    var maps = Object.values(window).filter(function(v) {'
-        '      return v && v._leaflet_id !== undefined;'
-        '    });'
-        '    maps.forEach(function(m) {'
-        '      try { m.setView([' + str(lat) + ',' + str(lon) + '],' + str(zoom) + '); } catch(e) {}'
-        '    });'
-        '  }, 500);'
-        '});'
-        '</script>'
+def get_map_html(folium_map, center_lat=None, center_lon=None, zoom=None):
+    """
+    Render folium map to full standalone HTML page.
+    Uses full-page approach so the map fills completely — no blank areas.
+    """
+    # Get the folium HTML
+    raw_html = folium_map.get_root().render()
+
+    # Wrap in full page HTML that fills the iframe completely
+    full_html = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  html, body {{ width:100%; height:100%; overflow:hidden; background:#0F172A; }}
+  .folium-map {{ position:absolute; top:0; left:0; width:100%; height:100%; }}
+</style>
+</head>
+<body>
+{raw}
+<script>
+// Force map to fill entire space and zoom to location
+window.onload = function() {{
+  setTimeout(function() {{
+    // Find all leaflet maps and resize + re-center them
+    for (var key in window) {{
+      try {{
+        var obj = window[key];
+        if (obj && obj._leaflet_id && obj.setView && obj.invalidateSize) {{
+          obj.invalidateSize(true);
+          {setview}
+        }}
+      }} catch(e) {{}}
+    }}
+  }}, 200);
+}};
+</script>
+</body>
+</html>""".format(
+        raw=raw_html,
+        setview=(
+            "obj.setView([" + str(center_lat) + "," + str(center_lon) + "]," + str(zoom) + ");"
+            if center_lat is not None else ""
+        )
     )
-    return html.replace("</body>", js + "</body>")
+    return full_html
 
 
-def get_map_html(m, force_lat=None, force_lon=None, force_zoom=None):
-    """Convert folium map to HTML string, optionally injecting force-zoom JS."""
-    html = m.get_root().render()
-    if force_lat is not None:
-        html = _inject_zoom(html, force_lat, force_lon, force_zoom)
-    return html
-
-
-# ══════════════════════════════════════════════════════════════════
-# PUBLIC MAP BUILDERS
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════
+# PUBLIC BUILDERS
+# ═══════════════════════════════════════════════
 
 def build_tamilnadu_map():
-    """
-    Default map — shows full Tamil Nadu.
-    Shown before any prediction is made.
-    """
-    m = _make_map(TN_LAT, TN_LON, TN_ZOOM)
-
-    # Tamil Nadu boundary highlight
+    """Default Tamil Nadu overview map."""
+    m = folium.Map(
+        location=[TN_LAT, TN_LON],
+        zoom_start=TN_ZOOM,
+        tiles="OpenStreetMap",
+    )
+    # Red dashed rectangle around Tamil Nadu
     folium.Rectangle(
         bounds=[[8.0, 76.2], [13.6, 80.4]],
         color="#EF4444", fill=True,
-        fill_color="#EF4444", fill_opacity=0.04,
-        weight=2, dash_array="6 4",
-        tooltip="Tamil Nadu"
+        fill_color="#EF4444", fill_opacity=0.03,
+        weight=2, dash_array="8 4",
+        tooltip="Tamil Nadu — Search any location"
     ).add_to(m)
-
-    # Title overlay
-    title = (
-        '<div style="position:fixed;top:14px;left:50%;transform:translateX(-50%);'
-        'background:rgba(15,23,42,0.92);border:1px solid #EF4444;border-radius:8px;'
-        'padding:7px 20px;z-index:9999;font-family:Segoe UI,sans-serif;'
+    m.get_root().html.add_child(folium.Element(
+        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
+        'background:rgba(15,23,42,0.93);border:1px solid #EF4444;border-radius:8px;'
+        'padding:7px 18px;z-index:9999;font-family:Segoe UI,sans-serif;'
         'font-size:13px;font-weight:bold;color:#F1F5F9;white-space:nowrap;">'
-        '🔥 Wildfire Risk Monitor — Tamil Nadu'
-        '<span style="color:#64748B;font-size:11px;font-weight:normal;">'
-        ' | Search a city or forest on the left</span></div>'
-    )
-    m.get_root().html.add_child(folium.Element(title))
+        '🔥 Wildfire Monitor — Tamil Nadu'
+        '<span style="color:#64748B;font-size:11px;font-weight:normal;margin-left:8px;">'
+        '| Search a place and click Analyze</span></div>'
+    ))
     return get_map_html(m, TN_LAT, TN_LON, TN_ZOOM)
 
 
 def build_live_map(result):
-    """Zooms to predicted location with risk circles."""
+    """Map zoomed to predicted location."""
     lat  = result["lat"]
     lon  = result["lon"]
     risk = result["risk"]["level"]
     zoom = ZOOM_LEVEL.get(risk, 10)
-
-    m = _make_map(lat, lon, zoom)
-    m = _add_pin(m, result)
-    m = _add_legend(m)
+    m    = folium.Map(location=[lat, lon], zoom_start=zoom, tiles="OpenStreetMap")
+    m    = _add_pin(m, result)
+    m.get_root().html.add_child(folium.Element(_legend_html()))
     return get_map_html(m, lat, lon, zoom)
 
 
 def build_multizone_map(predictions):
-    """All zones on Tamil Nadu map."""
     valid = [r for r in predictions if r]
     if not valid:
         return build_tamilnadu_map()
-
-    m = _make_map(TN_LAT, TN_LON, TN_ZOOM)
+    m = folium.Map(location=[TN_LAT, TN_LON], zoom_start=TN_ZOOM, tiles="OpenStreetMap")
     for r in valid:
         m = _add_pin(m, r)
-
     lats = [r["lat"] for r in valid]
     lons = [r["lon"] for r in valid]
-    m.fit_bounds([
-        [min(lats)-0.5, min(lons)-0.5],
-        [max(lats)+0.5, max(lons)+0.5]
-    ])
-    m = _add_legend(m)
+    m.fit_bounds([[min(lats)-0.5, min(lons)-0.5], [max(lats)+0.5, max(lons)+0.5]])
+    m.get_root().html.add_child(folium.Element(_legend_html()))
     return get_map_html(m)
 
 
 def build_history_heatmap():
-    """Heatmap from prediction CSV."""
     if not os.path.exists(ALERT_LOG_PATH) or os.path.getsize(ALERT_LOG_PATH) == 0:
         return build_tamilnadu_map()
     try:
@@ -233,9 +224,9 @@ def build_history_heatmap():
         df = pd.read_csv(ALERT_LOG_PATH, engine="python", on_bad_lines="skip")
         if df.empty or "lat" not in df.columns:
             return build_tamilnadu_map()
-        wt = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        wt = {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}
         df["weight"] = df["risk_level"].map(wt).fillna(1)
-        m = _make_map(TN_LAT, TN_LON, TN_ZOOM)
+        m = folium.Map(location=[TN_LAT, TN_LON], zoom_start=TN_ZOOM, tiles="OpenStreetMap")
         HeatMap([[r["lat"],r["lon"],r["weight"]] for _,r in df.iterrows()],
                 radius=35, blur=25, max_zoom=12,
                 gradient={"0.2":"#16A34A","0.4":"#D97706","0.7":"#EA580C","1.0":"#DC2626"}
@@ -250,10 +241,9 @@ def build_history_heatmap():
 
 
 def build_mini_map(lat, lon, name, risk="UNKNOWN"):
-    """Sidebar preview — always zooms to location."""
     hc = RISK_COLOR.get(risk, "#3B82F6")
     fc = FOLIUM_COLOR.get(risk, "blue")
-    m  = _make_map(lat, lon, 9)
+    m  = folium.Map(location=[lat, lon], zoom_start=9, tiles="OpenStreetMap")
     folium.Marker([lat,lon], icon=folium.Icon(color=fc,icon="map-marker",prefix="glyphicon"),
                   tooltip=name).add_to(m)
     folium.Circle([lat,lon], radius=8000, color=hc, fill=True, fill_opacity=0.25, weight=2).add_to(m)
