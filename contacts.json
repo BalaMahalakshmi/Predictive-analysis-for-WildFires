@@ -8,5 +8,10 @@
   "forest_name": "",
   "forest_officer_email": "",
   "sender_email": "sankarisri8578@gmail.com",
-  "sender_pass": "pbya yhsi pkey pgtn"
+  "sender_pass": "pbya yhsi pkey pgtn",
+  "thresholds": {
+    "medium_min": 10,
+    "high_min": 25,
+    "critical_min": 50
+  }
 }

@@ -158,4 +158,4 @@ def _try_owm(query):
                     "display_name": display, "fallback": False}
     except Exception:
         pass
-    return None
+    return None 

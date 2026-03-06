@@ -248,3 +248,83 @@ def build_mini_map(lat, lon, name, risk="UNKNOWN"):
                   tooltip=name).add_to(m)
     folium.Circle([lat,lon], radius=8000, color=hc, fill=True, fill_opacity=0.25, weight=2).add_to(m)
     return get_map_html(m, lat, lon, 9)
+
+
+# ═══════════════════════════════════════════════
+# AUTO MONITOR MAP — shows all zones at once
+# ═══════════════════════════════════════════════
+
+def build_automonitor_map(predictions, last_updated=""):
+    """
+    Full Tamil Nadu map showing ALL 40 zones with live risk.
+    predictions: list of result dicts (or None for pending zones).
+    Shows color-coded pins for every zone simultaneously.
+    """
+    m = folium.Map(location=[TN_LAT, TN_LON], zoom_start=TN_ZOOM,
+                   tiles="OpenStreetMap")
+
+    # Count by risk
+    counts = {"CRITICAL":0, "HIGH":0, "MEDIUM":0, "LOW":0, "PENDING":0}
+
+    for r in predictions:
+        if r is None:
+            counts["PENDING"] += 1
+            continue
+        risk = r["risk"]["level"]
+        counts[risk] = counts.get(risk, 0) + 1
+        m = _add_pin(m, r)
+
+    # ── Top status bar ────────────────────────────────────────────────────
+    alert_count = counts["CRITICAL"] + counts["HIGH"]
+    if alert_count > 0:
+        bar_bg    = "rgba(127,29,29,0.95)"
+        bar_border= "#DC2626"
+        bar_msg   = ("🔴 FIRE ALERT — " + str(alert_count) +
+                     " zone(s) HIGH/CRITICAL risk! Alerts sent.")
+        bar_color = "#FCA5A5"
+    else:
+        bar_bg    = "rgba(5,46,22,0.95)"
+        bar_border= "#16A34A"
+        bar_msg   = "✅ ALL CLEAR — No fire risk detected across Tamil Nadu"
+        bar_color = "#86EFAC"
+
+    status_html = (
+        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
+        'background:' + bar_bg + ';border:2px solid ' + bar_border + ';'
+        'border-radius:10px;padding:8px 20px;z-index:9999;'
+        'font-family:Segoe UI,sans-serif;text-align:center;white-space:nowrap;">'
+        '<div style="font-size:14px;font-weight:900;color:' + bar_color + ';">'
+        + bar_msg + '</div>'
+        '<div style="font-size:11px;color:#94A3B8;margin-top:3px;">'
+        '🔴 Critical:' + str(counts["CRITICAL"]) +
+        ' &nbsp;🟠 High:' + str(counts["HIGH"]) +
+        ' &nbsp;🟡 Medium:' + str(counts["MEDIUM"]) +
+        ' &nbsp;🟢 Low:' + str(counts["LOW"]) +
+        (' &nbsp;⏳ Pending:' + str(counts["PENDING"]) if counts["PENDING"] > 0 else '') +
+        (' &nbsp;|&nbsp; Updated: ' + last_updated if last_updated else '') +
+        '</div></div>'
+    )
+    m.get_root().html.add_child(folium.Element(status_html))
+
+    # ── Legend ────────────────────────────────────────────────────────────
+    legend = (
+        '<div style="position:fixed;bottom:30px;right:10px;'
+        'background:rgba(15,23,42,0.95);border:1px solid #334155;'
+        'border-radius:10px;padding:14px 18px;z-index:9999;'
+        'font-family:Segoe UI,sans-serif;font-size:12px;color:#F1F5F9;">'
+        '<b style="color:#94A3B8;font-size:10px;letter-spacing:2px;">RISK LEVELS</b><br><br>'
+        '<span style="color:#DC2626;font-size:16px;">&#9679;</span> '
+        '<b style="color:#DC2626;">CRITICAL</b> — Alert Sent<br>'
+        '<span style="color:#EA580C;font-size:16px;">&#9679;</span> '
+        '<b style="color:#EA580C;">HIGH</b> — Alert Sent<br>'
+        '<span style="color:#D97706;font-size:16px;">&#9679;</span> '
+        '<b style="color:#D97706;">MEDIUM</b> — Monitor<br>'
+        '<span style="color:#16A34A;font-size:16px;">&#9679;</span> '
+        '<b style="color:#16A34A;">LOW</b> — Safe<br>'
+        '<br><span style="color:#64748B;font-size:11px;">'
+        '📍 Click any pin for details</span>'
+        '</div>'
+    )
+    m.get_root().html.add_child(folium.Element(legend))
+
+    return get_map_html(m, TN_LAT, TN_LON, TN_ZOOM)
