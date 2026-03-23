@@ -12,10 +12,11 @@ def _apply_saved_thresholds():
         import config
         c = json.load(open('contacts.json')) if os.path.exists('contacts.json') else {}
         t = c.get('thresholds', {})
+        # Default fallback = Tamil Nadu Summer calibrated values
         if t.get('high_min'):
-            med  = t.get('medium_min', 25) / 100
-            high = t.get('high_min',   50) / 100
-            crit = t.get('critical_min',75) / 100
+            med  = t.get('medium_min', 55) / 100
+            high = t.get('high_min',   75) / 100
+            crit = t.get('critical_min',88) / 100
             config.RISK_LEVELS = {
                 'LOW'     : (0.00, med),
                 'MEDIUM'  : (med,  high),
@@ -759,15 +760,15 @@ with tab5:
     with pc2:
         st.markdown('<div style="text-align:center;font-size:10px;color:#D97706;">RECOMMENDED ⭐</div>', unsafe_allow_html=True)
         if st.button("Tamil Nadu Summer", use_container_width=True, key="pr2"):
-            saved_tg["thresholds"]={"medium_min":20,"high_min":40,"critical_min":65}; save_contacts(saved_tg); st.rerun()
+            saved_tg["thresholds"]={"medium_min":55,"high_min":75,"critical_min":88}; save_contacts(saved_tg); st.rerun()
     with pc3:
         st.markdown('<div style="text-align:center;font-size:10px;color:#EA580C;">SENSITIVE</div>', unsafe_allow_html=True)
         if st.button("High Sensitivity",  use_container_width=True, key="pr3"):
-            saved_tg["thresholds"]={"medium_min":15,"high_min":30,"critical_min":55}; save_contacts(saved_tg); st.rerun()
+            saved_tg["thresholds"]={"medium_min":45,"high_min":65,"critical_min":82}; save_contacts(saved_tg); st.rerun()
     with pc4:
         st.markdown('<div style="text-align:center;font-size:10px;color:#DC2626;">STRICT</div>', unsafe_allow_html=True)
         if st.button("Forest Reserve",    use_container_width=True, key="pr4"):
-            saved_tg["thresholds"]={"medium_min":10,"high_min":25,"critical_min":50}; save_contacts(saved_tg); st.rerun()
+            saved_tg["thresholds"]={"medium_min":40,"high_min":60,"critical_min":78}; save_contacts(saved_tg); st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("💾 Save Thresholds", type="primary", use_container_width=True, key="btn_st"):

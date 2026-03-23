@@ -20,13 +20,57 @@ SCALER_PATH = 'models/wildfire_scaler.pkl'
 
 FEATURE_COLS = ['Temperature','RH','Ws','Rain','FFMC','DMC','DC','ISI','BUI','FWI']
 
-# ── Risk thresholds ────────────────────────────────────────────────────────
-RISK_LEVELS = {
-    'LOW'     : (0.00, 0.25),
-    'MEDIUM'  : (0.25, 0.50),
-    'HIGH'    : (0.50, 0.75),
-    'CRITICAL': (0.75, 1.01),
+# ── Risk thresholds (Tamil Nadu Summer Calibrated) ─────────────────────────
+# NOTE: The ML model was trained on Algerian forest data where normal summer
+# temps are 15–28°C and humidity 40–70%. Tamil Nadu summer is much hotter
+# (30–42°C) and drier (20–40% humidity), so the model naturally scores TN
+# weather higher. These calibrated thresholds prevent false HIGH/CRITICAL
+# alerts for normal Tamil Nadu summer conditions.
+#
+# PRESET OPTIONS (change ACTIVE_PRESET to switch):
+#   'default'       → Original Algeria thresholds (causes false alarms in TN)
+#   'tn_summer'     → Tamil Nadu Summer (RECOMMENDED for March–June)
+#   'tn_sensitive'  → High Sensitivity (use during peak drought)
+#   'tn_forest'     → Forest Reserve (ultra-sensitive for sanctuaries)
+
+ACTIVE_PRESET = 'tn_summer'   # ← Change this to switch preset
+
+THRESHOLD_PRESETS = {
+    'default': {
+        'LOW'     : (0.00, 0.25),
+        'MEDIUM'  : (0.25, 0.50),
+        'HIGH'    : (0.50, 0.75),
+        'CRITICAL': (0.75, 1.01),
+    },
+    'tn_summer': {
+        # Tamil Nadu Summer Calibrated — RECOMMENDED
+        # LOW:      0–55%  (normal TN summer weather, no alert)
+        # MEDIUM:  55–75%  (watch closely, no alert yet)
+        # HIGH:    75–88%  (genuinely dangerous, send alert)
+        # CRITICAL:88–100% (extreme fire risk, emergency alert)
+        'LOW'     : (0.00, 0.55),
+        'MEDIUM'  : (0.55, 0.75),
+        'HIGH'    : (0.75, 0.88),
+        'CRITICAL': (0.88, 1.01),
+    },
+    'tn_sensitive': {
+        # Slightly more sensitive — use in peak April–May drought
+        'LOW'     : (0.00, 0.45),
+        'MEDIUM'  : (0.45, 0.65),
+        'HIGH'    : (0.65, 0.82),
+        'CRITICAL': (0.82, 1.01),
+    },
+    'tn_forest': {
+        # Most sensitive — for tiger reserves and national parks only
+        'LOW'     : (0.00, 0.40),
+        'MEDIUM'  : (0.40, 0.60),
+        'HIGH'    : (0.60, 0.78),
+        'CRITICAL': (0.78, 1.01),
+    },
 }
+
+# Active thresholds applied by the system
+RISK_LEVELS = THRESHOLD_PRESETS[ACTIVE_PRESET]
 
 # ── ALL Tamil Nadu monitoring zones (40 key locations) ────────────────────
 LOCATIONS = [
